@@ -1,0 +1,575 @@
+pragma solidity >=0.8.0 <0.9.0;
+//SPDX-License-Identifier: MIT
+
+import "hardhat/console.sol";
+// import "@openzeppelin/contracts/access/Ownable.sol"; //https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol
+
+contract YourContract {
+  // Scheme subdialect interpreter in solidity
+
+    // running a process is expensive
+    // first write, make it correct, then optimize
+
+    // arrays are typed
+
+    // 1. Design a generic-type thing
+    // 2. How do design security in?
+    // 3. How to prove correctness? Auditability
+    // 4. How to optimize?
+    // 5. Versioning (syntax, implementation, data)
+
+  // Type Definitions
+  // symbol := string
+  // number := uint256
+  // address := address
+  // atom := symbol | number | address
+  // list := array of expressions
+  // expression := atom | list
+  // environment := mapping {variable: value}
+
+  // tokenize
+
+  // Solidity strings may be UTF-8 but solidity doesn't provide
+  // any functionality working with it.
+  // We restrict the input to the ASCII strings 
+  function tokenize( string calldata str ) public pure returns (Token[] memory) {
+    // convert string to an array of string tokens
+    bytes memory input = bytes(str);
+    Token[] memory output;
+
+    // while not at end
+    uint location = 0;
+    while ( location < input.length ) {
+          // get char
+          bytes1 currentChar = input[ location ];
+          // if space
+          if ( currentChar == SYMBOL_SPACE ) {
+                // skip
+                location += 1;
+                continue;
+          }
+          // if '('
+          if ( currentChar == SYMBOL_LEFT_PARENTHESIS ) {
+            // then open parenthesis token
+            // output.push(); // push() not availalbe for memory arryays
+            // need to create a new array and copy every element.
+            Token memory token = Token(TokenType.OPEN_PARENTHESIS, '(', location);
+            
+            Token[] memory newOutput = new Token[](output.length + 1);
+            uint i = 0;{}
+            for (i = 0; i < output.length; i += 1) {
+              newOutput[i] = output[i];
+            }
+            newOutput[i] = token;
+            output = newOutput;
+            
+            location += 1;
+            continue;
+          }
+
+          // if ')'
+          if ( currentChar == SYMBOL_RIGHT_PARENTHESIS ) {
+            // then close parenthesis token
+            // output.push(Token(TokenType.OPEN_PARENTHESIS, ')'));
+            Token memory token = Token(TokenType.CLOSE_PARENTHESIS, ')', location);
+
+            Token[] memory newOutput = new Token[](output.length + 1);
+            uint i = 0;
+            for (i = 0; i < output.length; i += 1) {
+              newOutput[i] = output[i];
+            }
+            newOutput[i] = token;
+            output = newOutput;
+
+
+            location += 1;
+            continue;
+          }
+
+          // try parse address
+            // if '0x'
+              // if starts with '0x'
+          bool startsWith0x = currentChar == SYMBOL_DIGIT_0 &&
+            location + 1 < input.length &&
+            input[ location + 1 ] == SYMBOL_LOWER_X;
+
+          if ( startsWith0x ) {
+            // make empty hex address string bytes
+            bytes memory hexAddressSymbols;
+
+            // start after 0x
+            uint addressLocation = location + 2;
+
+            // while current char is hex and hex address length < 40 symbols and we have input
+            while ( addressLocation < input.length &&
+                    hexAddressSymbols.length < ADDRESS_SYMBOLS_LENGTH && // what if blockchain address is more than 40 symbols?
+                    (
+                      // 0 - 9
+                      input[ addressLocation ] >= 0x30 && input[ addressLocation ] <= 0x39 ||
+                      // a - f
+                      input[ addressLocation ] >= 0x61 && input[ addressLocation ] <= 0x66 ||
+                      // A - F
+                      input[ addressLocation ] >= 0x41 && input[ addressLocation ] <= 0x46
+                    )
+            ) {
+              // append char to hex address string
+              // hexAddressSymbols.push( input[ addressLocation ] );
+              bytes1 symbol = input[ addressLocation ];
+
+              bytes memory newSymbols = new bytes(hexAddressSymbols.length + 1);
+              uint i = 0;
+              for (i = 0; i < hexAddressSymbols.length; i += 1) {
+                newSymbols[i] = hexAddressSymbols[i];
+              }
+              newSymbols[i] = symbol;
+              hexAddressSymbols = newSymbols;
+
+              // next location
+              addressLocation += 1;
+            }
+
+            // if hex address string is 40 symbols
+              // and next symbol is space or parentheses or end of input (token terminated)
+            if ( hexAddressSymbols.length == ADDRESS_SYMBOLS_LENGTH && 
+                 (addressLocation >= input.length ||
+                 input[ addressLocation ] == SYMBOL_SPACE || 
+                 input[ addressLocation ] == SYMBOL_LEFT_PARENTHESIS || 
+                 input[ addressLocation ] == SYMBOL_RIGHT_PARENTHESIS 
+                 )
+            ) {
+              // create address token
+              // output.push(Token(TokenType.HEX_ADDRESS, string(hexAddressSymbols)));
+
+            Token memory token = Token(TokenType.HEX_ADDRESS, string(hexAddressSymbols), location);
+
+            Token[] memory newOutput = new Token[](output.length + 1);
+            uint i = 0;
+            for (i = 0; i < output.length; i += 1) {
+              newOutput[i] = output[i];
+            }
+            newOutput[i] = token;
+            output = newOutput;
+
+
+              // move to the new location
+              location = addressLocation;
+              // continue loop
+              continue;
+            }
+            // else
+              // this is not an address
+              // continue tokenizing
+          }
+
+          // if '0-9'
+          bool startsWithDigit = currentChar >= 0x30 && currentChar <= 0x39;
+          if ( startsWithDigit ) {
+            // try parse number else next
+            bytes memory numberSymbols;
+
+            // start at current
+            uint numberLocation = location;
+
+            // while current is digit and we have input
+            while (
+              numberLocation < input.length &&
+              input[ numberLocation ] >= 0x30 && input[ numberLocation ] <= 0x39
+            ) {
+                // append
+                // numberSymbols.push( input[ numberLocation ] );
+
+                bytes1 symbol = input[ numberLocation ];
+
+                bytes memory newSymbols = new bytes(numberSymbols.length + 1);
+                uint i = 0;
+                for (i = 0; i < numberSymbols.length; i += 1) {
+                  newSymbols[i] = numberSymbols[i];
+                }
+                newSymbols[i] = symbol;
+                numberSymbols = newSymbols;
+
+                // next location
+                numberLocation += 1;
+            }
+            
+            // if next char is space or parenthesis, then create token
+            if (  
+                 numberLocation >= input.length ||
+                 input[ numberLocation ] == SYMBOL_SPACE || 
+                 input[ numberLocation ] == SYMBOL_LEFT_PARENTHESIS || 
+                 input[ numberLocation ] == SYMBOL_RIGHT_PARENTHESIS 
+            ) {
+              // output.push(Token(TokenType.NUMBER, string(numberSymbols)));
+            Token memory token = Token(TokenType.NUMBER, string(numberSymbols), location);
+
+            Token[] memory newOutput = new Token[](output.length + 1);
+            uint i = 0;
+            for (i = 0; i < output.length; i += 1) {
+              newOutput[i] = output[i];
+            }
+            newOutput[i] = token;
+            output = newOutput;
+
+              location = numberLocation;
+              continue;
+            }
+            // else this is not a number.
+          }
+
+          // if fails, try parse symbol
+          // if symbol character - all non-control chars except space
+          if (currentChar > 0x20 && currentChar < 0x7F) { 
+            bytes memory symbolSymbols;
+
+            uint symbolLocation = location;
+
+            while ( 
+              symbolLocation < input.length &&
+              input[ symbolLocation ] > 0x20 && input[ symbolLocation ] < 0x7F &&
+              !(input[ symbolLocation ] == SYMBOL_LEFT_PARENTHESIS || 
+                 input[ symbolLocation ] == SYMBOL_RIGHT_PARENTHESIS)
+            ) {
+              // symbolSymbols.push( input[ symbolLocation ] );
+                bytes1 symbol = input[ symbolLocation ];
+
+                bytes memory newSymbols = new bytes(symbolSymbols.length + 1);
+                uint i = 0;
+                for (i = 0; i < symbolSymbols.length; i += 1) {
+                  newSymbols[i] = symbolSymbols[i];
+                }
+                newSymbols[i] = symbol;
+                symbolSymbols = newSymbols;
+
+              symbolLocation += 1;
+            }
+
+            // next char is space or parenthesis - create token
+            if (  
+                 symbolLocation >= input.length ||
+                 input[ symbolLocation ] == SYMBOL_SPACE || 
+                 input[ symbolLocation ] == SYMBOL_LEFT_PARENTHESIS || 
+                 input[ symbolLocation ] == SYMBOL_RIGHT_PARENTHESIS 
+            ) {
+              // output.push(Token(TokenType.SYMBOL, string(symbolSymbols)));
+
+            Token memory token = Token(TokenType.SYMBOL, string(symbolSymbols), location);
+
+            Token[] memory newOutput = new Token[](output.length + 1);
+            uint i = 0;
+            for (i = 0; i < output.length; i += 1) {
+              newOutput[i] = output[i];
+            }
+            newOutput[i] = token;
+            output = newOutput;
+              
+              location = symbolLocation;
+              continue;
+            }
+            // else it is not a symbol
+          }
+          // if fails, error.
+          revert SyntaxError(location);          
+    }
+
+    return output;
+  }
+
+  error SyntaxError(uint byteLocation);
+
+  bytes1 constant SYMBOL_SPACE = 0x20;
+  bytes1 constant SYMBOL_LEFT_PARENTHESIS = 0x28;
+  bytes1 constant SYMBOL_RIGHT_PARENTHESIS = 0x29;
+
+  bytes1 constant SYMBOL_DIGIT_0 = 0x30;
+
+  bytes1 constant SYMBOL_LOWER_X = 0x78;
+
+  uint constant ADDRESS_SYMBOLS_LENGTH = 40;
+
+  enum TokenType {
+    OPEN_PARENTHESIS, 
+    CLOSE_PARENTHESIS,
+    HEX_ADDRESS,
+    NUMBER,
+    SYMBOL
+  }
+
+  struct Token {
+    TokenType kind;
+    string value;
+    uint location;
+  }
+
+
+  // token = open-parenthesis | close-parenthesis | hex-address | number | symbol
+  
+  // number = [0-9]+ // that fits to uint256
+  // hex-address = '0x' [a-fA-F0-9]{40}
+  // symbol = (lowercase | uppercase | digit | punctuation)
+  // punctuation = \u0020...\u002F | \u003A...\u0040 | \u005b...\u0060 | \u007b...\u007e
+  // digit = \u0030...\u0039
+  // uppercase = \u0041...\u0051
+  // lowercase = \u0061...\u007a
+
+
+// expression := atom | list
+// list = '(' expression+ ')'
+// atom = symbol | number | address
+// symbol = string
+// number = uint256 number
+// address = '0x' [a-fA-F0-9]{40}
+      
+  
+  // read from list of tokens
+    // read expression from a sequence of tokens
+      // error on empty list
+      // pop first
+      // switch on token
+          // '('
+            // create list of sub-expressions until next ')'
+              // recursively call self for each proceeding token
+          // ')'
+            // wrong: can't start with ')'
+          // read atom(token)
+               // try address from string
+                  // starts with 0x
+                  // every symbol must be 0-9a-fA-F or fail
+                  // total number of symbols after 0x is 40
+               // or number from string
+                  // supports only uint256
+                  // one or more ascii 0-9 symbols
+                  // the resulting value must fit into uint256
+                  // error on overflow
+               // or symbol as string
+                  // take the string as is
+
+  // function readFromTokens(Token[] calldata tokens) public pure returns (Expression memory) {
+  //    Token[] memory input = tokens;
+
+  //     // error on empty list
+  //     if ( input.length == 0 ) {
+  //       revert SyntaxError();
+  //     }
+
+  //     // pop first token
+  //     Token memory token = input[0];
+
+  //     // input.pop()
+  //     // pop - create new array with 1 less;
+  //     // Token[] memory newInput = new Token[](input.length - 1);
+  //     // // copy remaining;
+  //     // uint i = 0;
+  //     // for( i = 0; i < newInput.length; i += 1) {
+  //     //   newInput[i] = input[i + 1];
+  //     // }
+  //     // // re-assign
+  //     // input = newInput;
+
+  //     // loc = 0
+  //     // tokenStack = tokens[loc]
+  //     // resultStack = stack with empty list
+
+  //     // while tokenStack not empty
+  //       // token = pop from tokenStack
+
+  //       // if token is atom
+  //         // pop list from resultStack
+  //         // append atom to list
+  //         // push list to resultStack
+  //       // if token is open paren
+  //         // push empty list to resultStack
+  //         // push all tokens until next closing paren to tokenStack
+  //       // if token is close paren
+  //         // pop expression from resultStack
+  //         // pop list from resultStack
+  //         // append expression to list
+  //         // push list to resultStack
+
+  //     // tokenStack must be empty
+  //     // location must be at the end of file
+  //     // result stack must have exactly 1 root list
+
+          
+
+  //     if ( token.kind == TokenType.OPEN_PARENTHESIS ) {
+  //       // create list of subexpressions until next closing parenthesis recursively
+  //         // start with empty list
+  //         // while not close parenthesis
+  //            // append result of recursive readFromTokens(...) which 
+  //            //   is expected to pop the tokens and so reduce the list
+  //            //   and produce either list or atom
+  //            //   so the appending an expression.
+  //         // check that ending with closing parenthesis
+  //         // pop the parenthesis
+  //       // return list (recursive return)
+  //     } else if ( token.kind == TokenType.CLOSE_PARENTHESIS ) {
+  //       revert ParsingError("unexpected )", token.location);
+  //     } else if ( token.kind == TokenType.NUMBER ) {
+  //       // convert token.value from ascii string to uint256 number
+  //       // return atom
+  //     } else if ( token.kind == TokenType.HEX_ADDRESS ) {
+  //       // convert token.value from hex string to address (uint160) number
+  //       // return atom 
+  //     } else if ( token.kind == TokenType.SYMBOL ) {
+  //       // use token.value as string
+  //       // return atom
+  //     }
+
+  //     // else unexpected symbol
+  //     revert ParsingError("unexpected symbol", token.location);
+  // }
+
+  function modifyArray(Token[] calldata tokens) public pure returns (Token[] calldata) {
+    return tokens;
+  }
+
+
+  // risks:
+  //    unable to modify array by reference -> replace with iteration
+  //    unable to use recursive calls -> replace with iteration
+  //    gas too high -> optimization or making whole thing very low-level
+
+  error UnexpectedEOF();
+  error ParsingError(string reason, uint location);
+
+  enum ExpressionType {
+    LIST,
+    ATOM_SYMBOL,
+    ATOM_NUMBER,
+    ATOM_ADDRESS
+  }
+
+  struct Expression {
+    ExpressionType kind;
+    bytes object;
+  }
+
+  struct ListExpression {
+    ExpressionType kind;
+    Expression[] value;
+    uint location;
+  }
+
+  struct SymbolAtomExpression {
+    ExpressionType kind;
+    string value;
+    uint location;
+  }
+
+  struct NumberAtomExpression {
+    ExpressionType kind;
+    uint256 value;
+    uint location;
+  }
+
+  struct AddressAtomExpression {
+    ExpressionType kind;
+    address value;
+    uint location;
+  }
+
+  function parse(string calldata str) public pure returns (Expression memory) {
+     Token[] memory tokens = tokenize(str);
+     Expression memory expr = readFromTokens(tokens);
+     return expr;
+  }
+    
+  // ast + visitor
+
+  // eval (expression, environment) -> expression
+      // if symbol (variable reference)
+          // return environment[symbol] // variable reference
+      // if number
+          // return value of number
+      // if address
+          // return value of address
+      // if boolean
+          // return value of boolean
+      // if list starting with 'if'
+          // test = list[1]
+          // conseq = list[2]
+          // alt = list[3]
+          // predicate = eval(test, env)
+          // if predicate 
+              // eval(conseq, env)
+          // else 
+              // eval(alt, env)
+      // if list with 'define':
+          // symbol = list[1]
+          // exp = list[2]
+          // env[symbol] = eval(exp, env) // modifies environment
+      // else it is a procedure call
+          // proc = eval(list[0], env)
+          // args = [eval(arg, env) for every arg in list[1...n]]
+          // return proc(args)
+  // function eval(Expression calldata x) public pure returns (Expression memory) {
+      // environment mapping is common for the whole function.
+
+      // results stack
+      // next expression stack
+
+      // stack is needed for visiting the tree
+
+      // env is accessible
+      // special CallReturn expression and CallReturn value
+      
+
+      // to make a recursive eval call for expression
+      // replace result for expression with ReadReturn
+      
+      // if atom
+        // 
+          
+        
+  // }
+
+// STRING OPERATIONS
+
+// replace string X with string Y in a string S
+  // in-place
+    // for each char at index C in C < len(S)-len(X)
+       // if S[C]..S[len(X)] == X
+          // len(y) < len(x) - we'll need to shift rest for len(x) - len(y) characters to the left
+          // len(y) == len(x) - no shift needed, just replace
+          // len(y) > len(x) - we need to shift rest for len(y) - len(x) characters to the right
+  // by construction
+    // for each char at index ...
+        // if not matches X
+            // copy char to the result string
+        // if matches X
+            // copy Y to the result string
+  // string length
+    // convert to bytes, return count
+
+  // concatenate strings together
+    // bytes.concat(bytes(s1), bytes(s2))
+  
+  // string equal to string
+    // keccak-hash
+  
+  // equal char-by-char
+    // for each index
+        // if not equal chars
+            // return false
+  
+  // compare lexicographically
+      // for each chars c1, c2
+          // if c1 == c2
+              // return equal
+          // if c1 > c2
+              // return descending
+          // if c1 < c2
+              // return ascending
+
+  // compare case-sensitive
+
+  // compare lexicographically, case-sensitive
+  
+  // ascii code -> string 
+
+  // string -> ascii code
+
+  // split string into array of strings on every separator (removing the separator)
+
+  // filter out value from the array
+}
