@@ -6,6 +6,7 @@ import "hardhat/console.sol";
 contract YourContract1 {
 
 
+    
     // type casting
 
     struct Foo {
