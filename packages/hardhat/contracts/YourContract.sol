@@ -56,7 +56,7 @@ contract YourContract {
     function tokenize(string calldata str)
         public
         pure
-        returns (Token[] memory)
+        returns (TokenStream memory)
     {
         // convert string to an array of string tokens
         bytes memory inputString = bytes(str);
@@ -285,7 +285,8 @@ contract YourContract {
 
         } // end of while loop
 
-        return output;
+        TokenStream memory result = TokenStream(output);
+        return result;
     }
 
     function isHexAddressChar( bytes1 char )
@@ -348,7 +349,7 @@ contract YourContract {
     }
 
     struct Token {
-        TokenType kind;
+        TokenType id;
         string value;
         uint256 currentCharIndex;
     }
@@ -361,8 +362,9 @@ contract YourContract {
 
     bytes1 constant SYMBOL_DIGIT_0 = 0x30;
 
-    bytes1 constant SYMBOL_LOWER_X = 0x78;
     bytes1 constant SYMBOL_DIGIT_9 = 0x39;
+
+    bytes1 constant SYMBOL_LOWER_X = 0x78;
 
     bytes1 constant SYMBOL_LOWER_A = 0x61;
     bytes1 constant SYMBOL_LOWER_F = 0x66;
@@ -406,14 +408,189 @@ contract YourContract {
         return newList;
     }
 
+    function expressionPush(Expression[] memory list, Expression memory entry)
+        public
+        pure
+        returns (Expression[] memory)
+    {
+        Expression[] memory newList = new Expression[](list.length + 1);
+        // copy existing
+        uint256 i = 0;
+        for (i = 0; i < list.length; i += 1) {
+            newList[i] = list[i];
+        }
+        newList[list.length] = entry;
+        return newList;
+    }
+
+    struct TokenStream {
+        Token[] tokens;
+    }
+
+    function tokenStreamPopFirst(TokenStream memory stream)
+        public
+        pure
+        returns (Token memory)
+    {
+        assert(stream.tokens.length > 0);
+        Token memory result = stream.tokens[0];
+
+        // create and copy reduced tokens
+        Token[] memory newList = new Token[](stream.tokens.length - 1);
+        uint256 i = 1;
+        for (i = 1; i < stream.tokens.length; i += 1)
+        {
+            newList[i - 1] = stream.tokens[i];
+        }
+        // modify the list
+        stream.tokens = newList;
+        
+        return result;
+    }
+
+    function tokenStreamPeekFirst(TokenStream memory stream)
+        public
+        pure
+        returns (Token memory)
+    {
+        assert(stream.tokens.length > 0);
+        Token memory result = stream.tokens[0];
+        return result;
+    }
 
     // convert token strings to expression AST
-    function parseTokens(Token[] memory tokens)
+    function parseTokens(TokenStream memory stream)
         public
         pure
         returns (Expression memory)
     {
+        // pop token
+        Token memory token = tokenStreamPopFirst(stream);
+        // HEX_ADDRESS,
+        if ( token.id == TokenType.HEX_ADDRESS )
+        {
+            // convert string to bytes20 / address -> encodeAddress
+            uint160 result = 0;
+            
+            // 0x231DE59a942909b8b8476B0E2a5b82b6D128e7B3
+            bytes memory str = bytes(token.value);
 
+            // assert length is 42
+            // assert first two is 0x
+            assert(str.length == 42);
+            assert(str[0] == SYMBOL_DIGIT_0 && str[1] == SYMBOL_LOWER_X);
+
+            uint256 charIndex = 2;
+            for ( charIndex = 2; charIndex < str.length; charIndex += 1)
+            {
+                uint8 bits4 = hexCharToDecimalNumber( str[ charIndex ] );
+
+                // add bits4 to the result
+                result = result & uint160(bits4);
+
+                // shift to the next 4 bits
+                result = result << 4;
+            }
+
+            // now we got the number, encode and return
+            return encodeAddress( address(result) );
+        }
+        // NUMBER,
+        else if ( token.id == TokenType.NUMBER )
+        {
+            // convert ascii digits to uint256 -> encodeNumber
+            uint256 result = 0;
+
+            bytes memory str = bytes(token.value);
+
+            // 1233468929234234134
+            uint256 charIndex = 0;
+            for (charIndex = 0; charIndex < str.length; charIndex += 1)
+            {
+                uint8 bits4 = decimalCharToDecimalNumber( str[ charIndex ] );
+                // can overflow
+                result *= 10;
+                // can overflow
+                result += uint256(bits4);
+            }
+
+            return encodeNumber( result );
+        }
+        // SYMBOL
+        else if ( token.id == TokenType.SYMBOL )
+        {
+            // use string as is -> encodeSymbol
+            string memory result = token.value;
+            return encodeSymbol( result );
+        }
+        // OPEN_PARENTHESIS,
+        else if ( token.id == TokenType.OPEN_PARENTHESIS )
+        {
+            // create empty list expression
+            Expression[] memory items = new Expression[](0);
+
+            // add children via parsing until the close parenth token
+                // while top is not a closed parenthesis
+            while ( tokenStreamPeekFirst(stream).id != TokenType.CLOSE_PARENTHESIS )
+            {
+                    // parse next item, will pop the item.
+                    Expression memory item = parseTokens(stream);
+                    // add result to the items list
+                    items = expressionPush(items, item);
+            }
+            // pop the close parenth token
+            tokenStreamPopFirst(stream);
+            
+            return encodeList(items);
+        }
+        // CLOSE_PARENTHESIS,
+        else if ( token.id == TokenType.CLOSE_PARENTHESIS )
+        {
+            // error - close parenthesis encountered
+            revert("unexpected close parenthesis");
+        }
+        else 
+        {
+            revert("unrecognized token type");
+        }
+    }
+
+    function hexCharToDecimalNumber( bytes1 char ) 
+        public
+        pure
+        returns (uint8 number)
+    {
+        if ( char >= SYMBOL_DIGIT_0 && char <= SYMBOL_DIGIT_9 )
+        {
+            return uint8(char) - uint8(SYMBOL_DIGIT_0);
+        }
+        else if ( char >= SYMBOL_LOWER_A && char <= SYMBOL_LOWER_F )
+        {
+            return uint8(char) - uint8(SYMBOL_LOWER_A) + 10;
+        }
+        else if ( char >= SYMBOL_UPPER_A && char <= SYMBOL_UPPER_F )
+        {
+            return uint8(char) - uint8(SYMBOL_UPPER_A) + 10;
+        }
+        else 
+        {
+            revert("unrecognized hex char");
+        }
+    }
+
+    function decimalCharToDecimalNumber( bytes1 char )
+        public
+        pure
+        returns (uint8 number)
+    {
+        if ( char >= SYMBOL_DIGIT_0 && char <= SYMBOL_DIGIT_9 )
+        {
+            return uint8(char) - uint8(SYMBOL_DIGIT_0);
+        }
+        else
+        {
+            revert("unrecognized decimal char");
+        }
     }
 
     function tryOutEval() public view returns (uint256) {
@@ -445,6 +622,17 @@ contract YourContract {
             evaluate(conditional, standardEnvironment())
         );
 
+        return result;
+    }
+
+    function interpret(string calldata str)
+        public 
+        view
+        returns (Expression memory)
+    {
+        TokenStream memory stream = tokenize(str);
+        Expression memory expression = parseTokens(stream);
+        Expression memory result = evaluate(expression, standardEnvironment());
         return result;
     }
 
@@ -663,13 +851,13 @@ contract YourContract {
             }
         }
         // not found, set new value
-        environment.entries = push(
+        environment.entries = environmentEntryPush(
             environment.entries,
             EnvironmentEntry(symbol, value)
         );
     }
 
-    function push(EnvironmentEntry[] memory list, EnvironmentEntry memory entry)
+    function environmentEntryPush(EnvironmentEntry[] memory list, EnvironmentEntry memory entry)
         public
         pure
         returns (EnvironmentEntry[] memory)
@@ -688,34 +876,138 @@ contract YourContract {
 
     function standardEnvironment() public pure returns (Environment memory) {
         // EnvironmentEntry[] memory entries = new EnvironmentEntry[](0);
-        EnvironmentEntry[] memory entries = new EnvironmentEntry[](2);
-        // ==
-        entries[0] = EnvironmentEntry(
-            "==",
-            // struct Expression[] -> (enum,bytes)[] -> (uint8, bytes)[]
-            encodeProcedure(selectorOf("equals((uint8,bytes)[])"))
+        EnvironmentEntry[] memory entries = new EnvironmentEntry[](0);
+        // equal?
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "equal?",
+                // struct Expression[] -> (enum,bytes)[] -> (uint8, bytes)[]
+                encodeProcedure(selectorOf("equals((uint8,bytes)[])"))
+            )
         );
-        // !=
-        entries[1] = EnvironmentEntry(
-            "!=",
-            encodeProcedure(selectorOf("notEquals((uint8,bytes)[])"))
+        // not equal
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "not-equal?",
+                encodeProcedure(selectorOf("notEquals((uint8,bytes)[])"))
+            )
         );
 
-        return Environment(entries);
+        // number comparisons
+        // = number equality
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "=",
+                encodeProcedure(selectorOf("numberEquals((uint8,bytes)[])"))
+            )
+        );
+
         // <
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "<",
+                encodeProcedure(selectorOf("lessThan((uint8,bytes)[])"))
+            )
+        );
+
         // >
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                ">",
+                encodeProcedure(selectorOf("greaterThan((uint8,bytes)[])"))
+            )
+        );
+
         // <=
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "<=",
+                encodeProcedure(selectorOf("lessThanOrEquals((uint8,bytes)[])"))
+            )
+        );
+
         // >=
-        // &&
-        // ||
-        // !
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                ">",
+                encodeProcedure(selectorOf("greaterThanOrEquals((uint8,bytes)[])"))
+            )
+        );
+
+        // logical operators
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "and",
+                encodeProcedure(selectorOf("boolAnd((uint8,bytes)[])"))
+            )
+        );
+
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "or",
+                encodeProcedure(selectorOf("boolOr((uint8,bytes)[])"))
+            )
+        );
+
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "not",
+                encodeProcedure(selectorOf("boolNot((uint8,bytes)[])"))
+            )
+        );
+
+        // Arithmetic on numbers
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "+",
+                encodeProcedure(selectorOf("numberAdd((uint8,bytes)[])"))
+            )
+        );
+
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "-",
+                encodeProcedure(selectorOf("numberSubtract((uint8,bytes)[])"))
+            )
+        );
+
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "*",
+                encodeProcedure(selectorOf("numberMultiply((uint8,bytes)[])"))
+            )
+        );
+
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "/",
+                encodeProcedure(selectorOf("numberDivide((uint8,bytes)[])"))
+            )
+        );
+
+
+        return Environment(entries);
         // +
         // -
         // *
         // /
         // abs
         // list
-        // contains
+        // element?
 
         // <tx signers> - read calldata
         // <safe owners> - read storage
@@ -864,7 +1156,7 @@ contract YourContract {
 
     // Standard functions
 
-    // (== a b) for terminals and lists, not for procedures
+    // (equal? a b) for terminals and lists, not for procedures
     function equals(Expression[] memory args)
         public
         pure
@@ -927,7 +1219,7 @@ contract YourContract {
         }
     }
 
-    // (!= a b)
+    // (not-equal? a b)
     function notEquals(Expression[] memory args)
         public
         pure
@@ -936,4 +1228,326 @@ contract YourContract {
         bool isEqual = decodeBool(equals(args));
         return encodeBool(!isEqual);
     }
+
+    // (< a b)
+    // only works on numbers
+    function lessThan(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.NUMBER)
+        {
+            return encodeBool(false);
+        }
+
+        uint256 lhs = decodeNumber(args[0]);
+        uint256 rhs = decodeNumber(args[1]);
+
+        return encodeBool(lhs < rhs);
+    }
+
+    function greaterThan(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.NUMBER)
+        {
+            return encodeBool(false);
+        }
+
+        uint256 lhs = decodeNumber(args[0]);
+        uint256 rhs = decodeNumber(args[1]);
+
+        return encodeBool(lhs > rhs);
+    }
+
+    function lessThanOrEquals(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.NUMBER)
+        {
+            return encodeBool(false);
+        }
+
+        uint256 lhs = decodeNumber(args[0]);
+        uint256 rhs = decodeNumber(args[1]);
+
+        return encodeBool(lhs <= rhs);
+    }
+
+    function greaterThanOrEquals(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.NUMBER)
+        {
+            return encodeBool(false);
+        }
+
+        uint256 lhs = decodeNumber(args[0]);
+        uint256 rhs = decodeNumber(args[1]);
+
+        return encodeBool(lhs >= rhs);
+    }
+
+    function numberEquals(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.NUMBER)
+        {
+            return encodeBool(false);
+        }
+
+        uint256 lhs = decodeNumber(args[0]);
+        uint256 rhs = decodeNumber(args[1]);
+
+        return encodeBool(lhs == rhs);
+    }
+
+    // (+ a b)
+    function numberAdd(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.NUMBER)
+        {
+            return encodeBool(false);
+        }
+
+        uint256 lhs = decodeNumber(args[0]);
+        uint256 rhs = decodeNumber(args[1]);
+
+        return encodeNumber(lhs + rhs);
+    }
+
+    // (- a b)
+    function numberSubtract(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.NUMBER)
+        {
+            return encodeBool(false);
+        }
+
+        uint256 lhs = decodeNumber(args[0]);
+        uint256 rhs = decodeNumber(args[1]);
+
+        return encodeNumber(lhs - rhs);
+    }
+
+    // (* a b)
+    function numberMultiply(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.NUMBER)
+        {
+            return encodeBool(false);
+        }
+
+        uint256 lhs = decodeNumber(args[0]);
+        uint256 rhs = decodeNumber(args[1]);
+
+        return encodeNumber(lhs * rhs);
+    }
+
+    // (/ a b)
+    function numberDivide(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.NUMBER)
+        {
+            return encodeBool(false);
+        }
+
+        uint256 lhs = decodeNumber(args[0]);
+        uint256 rhs = decodeNumber(args[1]);
+
+        return encodeNumber(lhs / rhs);
+    }
+
+    //  Logical Operations
+
+    // (and a b)
+    function boolAnd(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.BOOL)
+        {
+            return encodeBool(false);
+        }
+
+        bool lhs = decodeBool(args[0]);
+        bool rhs = decodeBool(args[1]);
+
+        return encodeBool(lhs && rhs);
+    }
+
+    // (or a b)
+    function boolOr(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != args[1].id) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.BOOL)
+        {
+            return encodeBool(false);
+        }
+
+        bool lhs = decodeBool(args[0]);
+        bool rhs = decodeBool(args[1]);
+
+        return encodeBool(lhs || rhs);
+    }
+
+    // question: should revert instead returning bools?
+
+    // (not a)
+    function boolNot(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 1) 
+        {
+            return encodeBool(false);
+        }
+
+        if (args[0].id != ExpressionType.BOOL)
+        {
+            return encodeBool(false);
+        }
+
+        bool lhs = decodeBool(args[0]);
+
+        return encodeBool( !lhs );
+    }
+
+    // to be useful: need to implement list operations and error reporting
+    // to integrate in multisig: implement standard vars for tx and owners
 }
