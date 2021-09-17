@@ -772,11 +772,15 @@ contract YourContract {
                 string memory symbol = decodeSymbol(list[1]);
 
                 // 3rd (index 2) is the expression to evaluate.
+                Expression memory value = evaluate(list[2], environment);
+
                 setEnvironment(
                     symbol,
                     environment,
-                    evaluate(list[2], environment)
+                    value
                 );
+
+                return value;
             } else {
                 // procedure call = <symbol> [<arg1> arg2 ...]
                 // get procedure from first element evaluation
@@ -999,6 +1003,13 @@ contract YourContract {
             )
         );
 
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "begin",
+                encodeProcedure(selectorOf("begin((uint8,bytes)[])"))
+            )
+        );
 
         return Environment(entries);
         // +
@@ -1546,6 +1557,23 @@ contract YourContract {
         bool lhs = decodeBool(args[0]);
 
         return encodeBool( !lhs );
+    }
+
+    // begin evals every argument in order and returns final one
+    // 
+    // every argument is already evaluated by the interpreter,
+    // so we will return the final one.
+    function begin(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length == 0)
+        {
+            revert("begin without arguments");
+        }
+        
+        return args[args.length - 1];
     }
 
     // to be useful: need to implement list operations and error reporting
