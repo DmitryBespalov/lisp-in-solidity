@@ -1,3 +1,7 @@
+# Notes
+* Modified the `src/components/Contract/index.jsx` to show only single `interpret` function for simple UI.
+
+
 # 🏗 Scaffold-ETH
 
 > everything you need to build on Ethereum! 🚀

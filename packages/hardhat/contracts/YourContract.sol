@@ -4,60 +4,154 @@ pragma solidity >=0.8.0 <0.9.0;
 import "hardhat/console.sol";
 
 contract YourContract {
-    /*
-        read inputString
 
-        read tokens
+    // base type for representing token in the input string.
+    struct Token {
+        TokenType id;
 
-        evaluates to expression
-    */
+        // the token string
+        string value;
 
-    /*
-    Input: string
+        // character index (ASCII) in the input string
+        uint256 currentCharIndex;
+    }
 
-    Output: 
-        stream of tokens
+    enum TokenType {
+        OPEN_PARENTHESIS,
+        CLOSE_PARENTHESIS,
+        HEX_ADDRESS,
+        NUMBER,
+        SYMBOL
+    }
 
-    Input:
-        stream of tokens
+    // Wrapper for the array of tokens to pass between functions in order to modify it.
+    struct TokenStream {
+        Token[] tokens;
+    }
 
-     Output:
-     Expression Types
+    error SyntaxError(uint256 byteLocation);
+
+    // ' '
+    bytes1 constant SYMBOL_SPACE = 0x20;
+    
+    // '('
+    bytes1 constant SYMBOL_LEFT_PARENTHESIS = 0x28;
+
+    // ')'
+    bytes1 constant SYMBOL_RIGHT_PARENTHESIS = 0x29;
+
+    // '0'
+    bytes1 constant SYMBOL_DIGIT_0 = 0x30;
+
+    // '9'
+    bytes1 constant SYMBOL_DIGIT_9 = 0x39;
+
+    // 'x'
+    bytes1 constant SYMBOL_LOWER_X = 0x78;
+
+    // 'a'
+    bytes1 constant SYMBOL_LOWER_A = 0x61;
+    
+    // 'f'
+    bytes1 constant SYMBOL_LOWER_F = 0x66;
+
+    // 'A'
+    bytes1 constant SYMBOL_UPPER_A = 0x41;
+
+    // 'F'
+    bytes1 constant SYMBOL_UPPER_F = 0x46;
+
+    // end of ascii range
+    bytes1 constant SYMBOL_END_OF_ASCII = 0x7F;
+
+    // 20 bytes x 2 hex chars per byte = 40 chars in the address
+    uint256 constant ADDRESS_SYMBOLS_LENGTH = 40;
+
+
+    // base 'class' - wrapper type for other expressions
+    // classes are not available in Solidity, so we're using structs with enums.
+    // other 'expression' types will be abi-encoded into `value`.
+    struct Expression {
+        ExpressionType id;
+        bytes value;
+    }
+
+    enum ExpressionType {
         ADDRESS,
         NUMBER,
         BOOL,
         SYMBOL,
         PROCEDURE,
         LIST
-    
-    */
+    }
 
-    // Solidity strings may be UTF-8 but solidity doesn't provide
-    // any functionality working with it.
-    // We restrict the inputString to the ASCII strings
+    // address expression
+    struct AddressExpression {
+        address value;
+    }
 
-    // requires: ASCII string with SPIL expressions
-    // guarantees:
-    // AST created or reverts with error
+    // uint256 number expression
+    struct NumberExpression {
+        uint256 value;
+    }
 
-    // convert string to array of tokens
+    // bool expression
+    struct BoolExpression {
+        bool value;
+    }
 
-    // convert string to bytes
-    // implement DFA for parsing the string
+    // a reference to a variable or a function in the execution environment
+    struct SymbolExpression {
+        string value;
+    }
 
-    // ' ' -> skip
-    // '(' -> start new list
-    // ')' -> finalize the list
-    // '0x' -> try read address: 0x[0-9a-fA-F]{40}<sep> <sep> = ws or '(' ')'
-    // '0'-'9' -> try read number: [0-9]+ (max must fit to 32 bytes) ends with <sep>
-    // not ' ' -> try read symbol: [....] <sep>
-    // else unknown token, error
+    // expression with multiple elements
+    struct ListExpression {
+        Expression[] items;
+    }
 
+    struct ProcedureExpression {
+        // cannot abi.encode or decode this
+        // function (Expression[] memory) internal pure returns (Expression memory) fn;
+        bytes4 selector;
+    }
+
+    // Environment is a lookup table of language's method names to method implementations
+    struct Environment {
+        EnvironmentEntry[] entries;
+    }
+
+    struct EnvironmentEntry {
+        string key;
+        Expression value;
+    }
+
+    // Main interpreter function. Input: string in the source language, output: evaluated expression.
+    function interpret(string calldata str)
+        public 
+        view
+        returns (Expression memory)
+    {
+        TokenStream memory stream = tokenize(str);
+        Expression memory expression = parseTokens(stream);
+        Expression memory result = evaluate(expression, standardEnvironment());
+        return result;
+    }
+
+    // creates tokens from the input string
     function tokenize(string calldata str)
         public
         pure
         returns (TokenStream memory)
     {
+        // ' ' -> skip
+        // '(' -> start new list
+        // ')' -> finalize the list
+        // '0x' -> try read address: 0x[0-9a-fA-F]{40}<sep> <sep> = ws or '(' ')'
+        // '0'-'9' -> try read number: [0-9]+ (max must fit to 32 bytes) ends with <sep>
+        // not ' ' -> try read symbol: [....] <sep>
+        // else unknown token, error
+
         // convert string to an array of string tokens
         bytes memory inputString = bytes(str);
         Token[] memory output;
@@ -290,7 +384,7 @@ contract YourContract {
     }
 
     function isHexAddressChar( bytes1 char )
-      public 
+      private 
       pure
       returns (bool)
     {
@@ -305,7 +399,7 @@ contract YourContract {
     }
 
     function isDigitChar( bytes1 char )
-        public
+        private
         pure
         returns (bool)
     {
@@ -313,7 +407,7 @@ contract YourContract {
     }
 
     function isEndOfTokenChar( bytes1 char )
-        public 
+        private 
         pure
         returns (bool)
     {
@@ -324,7 +418,7 @@ contract YourContract {
     }
 
     function isSymbolChar( bytes1 char )
-        public
+        private
         pure
         returns (bool)
     {
@@ -333,52 +427,16 @@ contract YourContract {
     }
 
     function isParenthesesChar( bytes1 char )
-        public
+        private
         pure
         returns (bool)
     {
         return char == SYMBOL_LEFT_PARENTHESIS || char == SYMBOL_RIGHT_PARENTHESIS;
     }
 
-    enum TokenType {
-        OPEN_PARENTHESIS,
-        CLOSE_PARENTHESIS,
-        HEX_ADDRESS,
-        NUMBER,
-        SYMBOL
-    }
-
-    struct Token {
-        TokenType id;
-        string value;
-        uint256 currentCharIndex;
-    }
-
-    error SyntaxError(uint256 byteLocation);
-
-    bytes1 constant SYMBOL_SPACE = 0x20;
-    bytes1 constant SYMBOL_LEFT_PARENTHESIS = 0x28;
-    bytes1 constant SYMBOL_RIGHT_PARENTHESIS = 0x29;
-
-    bytes1 constant SYMBOL_DIGIT_0 = 0x30;
-
-    bytes1 constant SYMBOL_DIGIT_9 = 0x39;
-
-    bytes1 constant SYMBOL_LOWER_X = 0x78;
-
-    bytes1 constant SYMBOL_LOWER_A = 0x61;
-    bytes1 constant SYMBOL_LOWER_F = 0x66;
-
-    bytes1 constant SYMBOL_UPPER_A = 0x41;
-    bytes1 constant SYMBOL_UPPER_F = 0x46;
-
-    bytes1 constant SYMBOL_END_OF_ASCII = 0x7F;
-
-    uint256 constant ADDRESS_SYMBOLS_LENGTH = 40;
-
-    // copy-paste
+    // copy-paste (here and in other places with push/pop) because I couldn't figure out how to override the array management for different types
     function tokenPush(Token[] memory list, Token memory entry)
-        public
+        private
         pure
         returns (Token[] memory)
     {
@@ -394,7 +452,7 @@ contract YourContract {
 
     // copy-paste
     function bytesPush(bytes memory list, bytes1 entry)
-        public
+        private
         pure
         returns (bytes memory)
     {
@@ -409,7 +467,7 @@ contract YourContract {
     }
 
     function expressionPush(Expression[] memory list, Expression memory entry)
-        public
+        private
         pure
         returns (Expression[] memory)
     {
@@ -423,12 +481,8 @@ contract YourContract {
         return newList;
     }
 
-    struct TokenStream {
-        Token[] tokens;
-    }
-
     function tokenStreamPopFirst(TokenStream memory stream)
-        public
+        private
         pure
         returns (Token memory)
     {
@@ -449,7 +503,7 @@ contract YourContract {
     }
 
     function tokenStreamPeekFirst(TokenStream memory stream)
-        public
+        private
         pure
         returns (Token memory)
     {
@@ -460,7 +514,7 @@ contract YourContract {
 
     // convert token strings to expression AST
     function parseTokens(TokenStream memory stream)
-        public
+        private
         pure
         returns (Expression memory)
     {
@@ -555,7 +609,7 @@ contract YourContract {
     }
 
     function hexCharToDecimalNumber( bytes1 char ) 
-        public
+        private
         pure
         returns (uint8 number)
     {
@@ -578,7 +632,7 @@ contract YourContract {
     }
 
     function decimalCharToDecimalNumber( bytes1 char )
-        public
+        private
         pure
         returns (uint8 number)
     {
@@ -592,139 +646,15 @@ contract YourContract {
         }
     }
 
-    // function tryOutEval() public view returns (uint256) {
-    //     // (if (== 2 2) 1 2)
-    //     Expression memory _1 = encodeNumber(1);
-    //     Expression memory _2 = encodeNumber(2);
-
-    //     Expression memory _hello = encodeNumber(2);
-    //     Expression memory _world = encodeNumber(2);
-
-    //     Expression memory _eq = encodeSymbol("==");
-
-    //     Expression memory _if = encodeSymbol("if");
-
-    //     Expression[] memory condExprs = new Expression[](3);
-    //     condExprs[0] = _eq;
-    //     condExprs[1] = _hello;
-    //     condExprs[2] = _world;
-    //     Expression memory condition = encodeList(condExprs);
-
-    //     Expression[] memory _ifExprs = new Expression[](4);
-    //     _ifExprs[0] = _if;
-    //     _ifExprs[1] = condition;
-    //     _ifExprs[2] = _1;
-    //     _ifExprs[3] = _2;
-    //     Expression memory conditional = encodeList(_ifExprs);
-
-    //     uint256 result = decodeNumber(
-    //         evaluate(conditional, standardEnvironment())
-    //     );
-
-    //     return result;
-    // }
-
-    function interpret(string calldata str)
-        public 
-        view
-        returns (Expression memory)
-    {
-        TokenStream memory stream = tokenize(str);
-        Expression memory expression = parseTokens(stream);
-        Expression memory result = evaluate(expression, standardEnvironment());
-        return result;
-    }
-
-    /*
-
-    def eval(x: Exp, env=global_env) -> Exp:
-    "Evaluate an expression in an environment."
-    if isinstance(x, Symbol):        # variable reference
-        return env[x]
-    elif isinstance(x, Number):      # constant number
-        return x                
-    elif x[0] == 'if':               # conditional (list)
-        (_, test, conseq, alt) = x
-        exp = (conseq if eval(test, env) else alt)
-        return eval(exp, env)
-    elif x[0] == 'define':           # definition (list)
-        (_, symbol, exp) = x
-        env[symbol] = eval(exp, env)
-    else:                            # procedure call (list)
-        proc = eval(x[0], env)
-        args = [eval(arg, env) for arg in x[1:]]
-        return proc(*args)
-        */
-
-    // envirnoment is a symbol lookup table
-    // that can reference by string variables or functions
-    // to wrap the value we can use a struct wrapper because the
-    // solidity is static type.
-    // or we can use the lookup only for variables...
-    // even then we would need to convert variables to some type.
-
-    // address expression
-    struct AddressExpression {
-        address value;
-    }
-
-    // uint256 number expression
-    struct NumberExpression {
-        uint256 value;
-    }
-
-    // bool expression
-    struct BoolExpression {
-        bool value;
-    }
-
-    // a reference to a variable or a function in the execution environment
-    struct SymbolExpression {
-        string value;
-    }
-
-    // expression with multiple elements
-    struct ListExpression {
-        Expression[] items;
-    }
-
-    // base class - wrapper type for other expressions
-    // classes are not available, so we're using structs
-    // other 'expression' types will be abi-encoded into bytes.
-    struct Expression {
-        ExpressionType id;
-        bytes value;
-    }
-
-    enum ExpressionType {
-        ADDRESS,
-        NUMBER,
-        BOOL,
-        SYMBOL,
-        PROCEDURE,
-        LIST
-    }
-
-    struct ProcedureExpression {
-        // cannot abi.encode or decode this
-        // function (Expression[] memory) internal pure returns (Expression memory) fn;
-        bytes4 selector;
-    }
-
-    struct Environment {
-        EnvironmentEntry[] entries;
-    }
-
-    struct EnvironmentEntry {
-        string key;
-        Expression value;
-    }
-
     // evaluate the AST
     function evaluate(
         Expression memory expression,
         Environment memory environment
-    ) public view returns (Expression memory) {
+    ) 
+        private
+        view 
+        returns (Expression memory) 
+    {
         // switch is not available in Solidity, therefore using if-else
         if (expression.id == ExpressionType.ADDRESS) {
             return expression;
@@ -816,7 +746,7 @@ contract YourContract {
     }
 
     function streq(string memory lhs, string memory rhs)
-        public
+        private
         pure
         returns (bool)
     {
@@ -828,7 +758,11 @@ contract YourContract {
     function getEnvironment(
         string memory symbol,
         Environment memory environment
-    ) public pure returns (Expression memory) {
+    ) 
+        private 
+        pure 
+        returns (Expression memory) 
+    {
         // find and return
         uint256 i = 0;
         for (i = 0; i < environment.entries.length; i += 1) {
@@ -844,7 +778,10 @@ contract YourContract {
         string memory symbol,
         Environment memory environment,
         Expression memory value
-    ) public pure {
+    ) 
+        private 
+        pure 
+    {
         // find or append
         uint256 i = 0;
         for (i = 0; i < environment.entries.length; i += 1) {
@@ -861,7 +798,7 @@ contract YourContract {
     }
 
     function environmentEntryPush(EnvironmentEntry[] memory list, EnvironmentEntry memory entry)
-        public
+        private
         pure
         returns (EnvironmentEntry[] memory)
     {
@@ -876,8 +813,13 @@ contract YourContract {
         newList[list.length] = entry;
         return newList;
     }
-
-    function standardEnvironment() public pure returns (Environment memory) {
+    
+    // creates a standard environment - mapping from language function names to implementations of these functions
+    function standardEnvironment() 
+        private 
+        pure 
+        returns (Environment memory) 
+    {
         // EnvironmentEntry[] memory entries = new EnvironmentEntry[](0);
         EnvironmentEntry[] memory entries = new EnvironmentEntry[](0);
         // equal?
@@ -1027,33 +969,31 @@ contract YourContract {
         );
         
         return Environment(entries);
-        // +
-        // -
-        // *
-        // /
-        // abs
-        // list
-        // element?
-
-        // <tx signers> - read calldata
-        // <safe owners> - read storage
     }
 
     // encoding / decoding AST types
 
-    function encodeBool(bool value) public pure returns (Expression memory) {
+    function encodeBool(bool value) 
+        private 
+        pure 
+        returns (Expression memory) 
+    {
         return
             Expression(ExpressionType.BOOL, abi.encode(BoolExpression(value)));
     }
 
-    function decodeBool(Expression memory expr) public pure returns (bool) {
+    function decodeBool(Expression memory expr) 
+        private 
+        pure 
+        returns (bool) 
+    {
         assert(expr.id == ExpressionType.BOOL);
         BoolExpression memory isTrue = abi.decode(expr.value, (BoolExpression));
         return isTrue.value;
     }
 
     function encodeAddress(address value)
-        public
+        private
         pure
         returns (Expression memory)
     {
@@ -1065,7 +1005,7 @@ contract YourContract {
     }
 
     function decodeAddress(Expression memory expr)
-        public
+        private
         pure
         returns (address)
     {
@@ -1078,7 +1018,7 @@ contract YourContract {
     }
 
     function encodeNumber(uint256 value)
-        public
+        private
         pure
         returns (Expression memory)
     {
@@ -1090,7 +1030,7 @@ contract YourContract {
     }
 
     function decodeNumber(Expression memory expr)
-        public
+        private
         pure
         returns (uint256)
     {
@@ -1103,7 +1043,7 @@ contract YourContract {
     }
 
     function encodeSymbol(string memory value)
-        public
+        private
         pure
         returns (Expression memory)
     {
@@ -1115,7 +1055,7 @@ contract YourContract {
     }
 
     function decodeSymbol(Expression memory expr)
-        public
+        private
         pure
         returns (string memory)
     {
@@ -1128,7 +1068,7 @@ contract YourContract {
     }
 
     function encodeList(Expression[] memory items)
-        public
+        private
         pure
         returns (Expression memory)
     {
@@ -1137,7 +1077,7 @@ contract YourContract {
     }
 
     function decodeList(Expression memory expr)
-        public
+        private
         pure
         returns (Expression[] memory)
     {
@@ -1150,7 +1090,7 @@ contract YourContract {
     }
 
     function encodeProcedure(bytes4 selector)
-        public
+        private
         pure
         returns (Expression memory)
     {
@@ -1162,7 +1102,7 @@ contract YourContract {
     }
 
     function decodeProcedure(Expression memory expr)
-        public
+        private
         pure
         returns (bytes4)
     {
@@ -1176,7 +1116,7 @@ contract YourContract {
 
     // utils
 
-    function selectorOf(string memory signature) public pure returns (bytes4) {
+    function selectorOf(string memory signature) private pure returns (bytes4) {
         return bytes4(keccak256(bytes(signature)));
     }
 
@@ -1283,6 +1223,7 @@ contract YourContract {
         return encodeBool(lhs < rhs);
     }
 
+    // (> a b)
     function greaterThan(Expression[] memory args)
         public
         pure
@@ -1309,6 +1250,7 @@ contract YourContract {
         return encodeBool(lhs > rhs);
     }
 
+    // (<= a b)
     function lessThanOrEquals(Expression[] memory args)
         public
         pure
@@ -1335,6 +1277,7 @@ contract YourContract {
         return encodeBool(lhs <= rhs);
     }
 
+    // (>= a b)
     function greaterThanOrEquals(Expression[] memory args)
         public
         pure
@@ -1361,6 +1304,7 @@ contract YourContract {
         return encodeBool(lhs >= rhs);
     }
 
+    // (== a b)
     function numberEquals(Expression[] memory args)
         public
         pure
@@ -1551,8 +1495,6 @@ contract YourContract {
         return encodeBool(lhs || rhs);
     }
 
-    // question: should revert instead returning bools?
-
     // (not a)
     function boolNot(Expression[] memory args)
         public
@@ -1632,7 +1574,4 @@ contract YourContract {
         // return false if nothing found
         return encodeBool(false);
     }
-
-    // to be useful: need to implement list operations and error reporting
-    // to integrate in multisig: implement standard vars for tx and owners
 }
