@@ -475,21 +475,20 @@ contract YourContract {
             // 0x231DE59a942909b8b8476B0E2a5b82b6D128e7B3
             bytes memory str = bytes(token.value);
 
-            // assert length is 42
-            // assert first two is 0x
-            assert(str.length == 42);
-            assert(str[0] == SYMBOL_DIGIT_0 && str[1] == SYMBOL_LOWER_X);
+            // we skipped the '0x' during parsing
+            // assert(str.length == 42);
+            // assert(str[0] == SYMBOL_DIGIT_0 && str[1] == SYMBOL_LOWER_X);
 
-            uint256 charIndex = 2;
-            for ( charIndex = 2; charIndex < str.length; charIndex += 1)
+            assert(str.length == 40);
+
+            uint256 charIndex = 0;
+            for ( charIndex = 0; charIndex < str.length; charIndex += 1)
             {
                 uint8 bits4 = hexCharToDecimalNumber( str[ charIndex ] );
 
-                // add bits4 to the result
-                result = result & uint160(bits4);
+                result *= 16;
 
-                // shift to the next 4 bits
-                result = result << 4;
+                result += uint160(bits4);
             }
 
             // now we got the number, encode and return
@@ -593,37 +592,37 @@ contract YourContract {
         }
     }
 
-    function tryOutEval() public view returns (uint256) {
-        // (if (== 2 2) 1 2)
-        Expression memory _1 = encodeNumber(1);
-        Expression memory _2 = encodeNumber(2);
+    // function tryOutEval() public view returns (uint256) {
+    //     // (if (== 2 2) 1 2)
+    //     Expression memory _1 = encodeNumber(1);
+    //     Expression memory _2 = encodeNumber(2);
 
-        Expression memory _hello = encodeNumber(2);
-        Expression memory _world = encodeNumber(2);
+    //     Expression memory _hello = encodeNumber(2);
+    //     Expression memory _world = encodeNumber(2);
 
-        Expression memory _eq = encodeSymbol("==");
+    //     Expression memory _eq = encodeSymbol("==");
 
-        Expression memory _if = encodeSymbol("if");
+    //     Expression memory _if = encodeSymbol("if");
 
-        Expression[] memory condExprs = new Expression[](3);
-        condExprs[0] = _eq;
-        condExprs[1] = _hello;
-        condExprs[2] = _world;
-        Expression memory condition = encodeList(condExprs);
+    //     Expression[] memory condExprs = new Expression[](3);
+    //     condExprs[0] = _eq;
+    //     condExprs[1] = _hello;
+    //     condExprs[2] = _world;
+    //     Expression memory condition = encodeList(condExprs);
 
-        Expression[] memory _ifExprs = new Expression[](4);
-        _ifExprs[0] = _if;
-        _ifExprs[1] = condition;
-        _ifExprs[2] = _1;
-        _ifExprs[3] = _2;
-        Expression memory conditional = encodeList(_ifExprs);
+    //     Expression[] memory _ifExprs = new Expression[](4);
+    //     _ifExprs[0] = _if;
+    //     _ifExprs[1] = condition;
+    //     _ifExprs[2] = _1;
+    //     _ifExprs[3] = _2;
+    //     Expression memory conditional = encodeList(_ifExprs);
 
-        uint256 result = decodeNumber(
-            evaluate(conditional, standardEnvironment())
-        );
+    //     uint256 result = decodeNumber(
+    //         evaluate(conditional, standardEnvironment())
+    //     );
 
-        return result;
-    }
+    //     return result;
+    // }
 
     function interpret(string calldata str)
         public 
@@ -1011,6 +1010,22 @@ contract YourContract {
             )
         );
 
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "list",
+                encodeProcedure(selectorOf("makeList((uint8,bytes)[])"))
+            )
+        );
+
+        entries = environmentEntryPush(
+            entries,
+            EnvironmentEntry(
+                "member",
+                encodeProcedure(selectorOf("isMember((uint8,bytes)[])"))
+            )
+        );
+        
         return Environment(entries);
         // +
         // -
@@ -1574,6 +1589,48 @@ contract YourContract {
         }
         
         return args[args.length - 1];
+    }
+
+    function makeList(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        return encodeList(args);
+    }
+
+    // (membe? value list)
+    // true if list contains value, false if it doesn't
+    function isMember(Expression[] memory args)
+        public
+        pure
+        returns (Expression memory)
+    {
+        if (args.length != 2)
+        {
+            return encodeBool(false);
+        }
+
+        // get list's contents
+        Expression[] memory list = decodeList(args[1]);
+
+        // check if any item equals to the first arg
+        uint256 i = 0;
+        for ( i = 0; i < list.length; i += 1)
+        {
+            Expression[] memory eqArgs = new Expression[](2);
+            eqArgs[0] = args[0];
+            eqArgs[1] = list[i];
+
+            bool itemsIsEqual = decodeBool(equals(eqArgs));
+            
+            if (itemsIsEqual) {
+                return encodeBool(true);
+            }
+        }
+
+        // return false if nothing found
+        return encodeBool(false);
     }
 
     // to be useful: need to implement list operations and error reporting
