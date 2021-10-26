@@ -1,97 +1,104 @@
-# Notes
+# LISP in Solidity
+
+**RESEARCH CODE. DO NOT USE IN PRODUCTION.**
+
+## Motivation
+
+**TLDR;** I wanted to create a DSL in Solidity and so created a LISP (subset) interpeter as a proof of concept.
+
+I wanted to solve a problem that some crypto traders have: having a Gnosis Safe Multisig, they want to limit the transactions possible for a certain owner.
+For example, if a newbie trader joins the multisig, they would have permission to only interact with a certain contract and to make a certain kind of transactions and put limits on the parameters.
+
+This felt as a good problem for a domain-speific language. Traders would specify the restrictions (or policies) for the multisig contract, and then the policies would be followed on the contract level.
+
+Currently implemented (Oct 2021) multisig functionality would be expressed with something like
+
+```
+N out of M owners
+```
+
+Then, other types of policies could be implemented if the DSL allow boolean logic
+
+```
+(signer IN owners) OR (signer IS 0x1234..3456)
+```
+
+The language interpreter would receive the environment from the host contract that would provide access to the current values of `owners`, and `signer` variable would be a special variable existing during singature check.
+
+Then, we could also define a format for pattern-matching the call data (contract interactions) for a specific contract with something like this:
+
+```
+to == 0x1234...3456 
+AND
+tx.data MATCHES
+    swap(
+        from[address]: ANY,
+        value[uin256]: 0...1500,
+        to[address]: ANY,
+        value[uint256]: 0...3975
+    )
+```
+
+However, building this in Solidity with my (very basic) skills in this language seemed as a complicated task. Therefore, I decided to build a proof-of-concept first for an easier language and selected LISP.
+
+I have used https://norvig.com/lispy.html as a blueprint and ported the python functionality to Solidity.
+
+So there it is, a subset of LISP, implemented in Solidity.
+
+## How to Use
+See `scaffold-eth-README.md` to learn how to start chain, server, and deploy the contracts.
+
+You can try out these expressions.
+
+Arithmetic with uint256 integers (+, -, *, /)
+
+```
+(+ 1 1)
+```
+
+Conditional, number copmarisons and boolean operators (or, and, not)
+
+```
+(if (or (> 1 2) (< 3 4)) 1 0)
+```
+
+Variable definitions
+
+```
+(begin (define a 3) (+ a 2))
+```
+
+Making lists and testing for membership
+
+```
+(begin (define L (list 1 2 3)) (member 1 L))
+```
+
+Please note, most operations (except `list`) support 2 arguments only.
+
+If you input incorrect syntax or a function not found, the app will crash :(
+
+## Viery short overview.
+It is a recursive descent parser.
+
+The interpreter takes input string, parses it into tokens, builds expression (AST) from the tokens, and then evaluates the expression recursively.
+
+The output from the evaluation is a Solidity struct representing a terminal expression (number, boolean, or a string). No user-formatting is implemented now.
+
+## Notes
+* I expect this to be extremely gas inefficient, no gas optimizations were made or designed in.
+* This is in no way unit tested or audited. Only debugged manually for the happy case.
 * Modified the `src/components/Contract/index.jsx` to show only single `interpret` function for simple UI.
 
+## Going further
+* See if this flies with gas limit gas costs.
+* Make the interpreter embeddable in other contracts.
+  * Integrate with the Gnosis Safe.
+* Implement the call data matching
+* Try out more human-readable syntax than LISP
 
-# 🏗 Scaffold-ETH
+# License
+See the LICENSE file.
 
-> everything you need to build on Ethereum! 🚀
-
-🧪 Quickly experiment with Solidity using a frontend that adapts to your smart contract:
-
-![image](https://user-images.githubusercontent.com/2653167/124158108-c14ca380-da56-11eb-967e-69cde37ca8eb.png)
-
-
-# 🏄‍♂️ Quick Start
-
-Prerequisites: [Node](https://nodejs.org/en/download/) plus [Yarn](https://classic.yarnpkg.com/en/docs/install/) and [Git](https://git-scm.com/downloads)
-
-> clone/fork 🏗 scaffold-eth:
-
-```bash
-git clone https://github.com/austintgriffith/scaffold-eth.git
-```
-
-> install and start your 👷‍ Hardhat chain:
-
-```bash
-cd scaffold-eth
-yarn install
-yarn chain
-```
-
-> in a second terminal window, start your 📱 frontend:
-
-```bash
-cd scaffold-eth
-yarn start
-```
-
-> in a third terminal window, 🛰 deploy your contract:
-
-```bash
-cd scaffold-eth
-yarn deploy
-```
-
-🔏 Edit your smart contract `YourContract.sol` in `packages/hardhat/contracts`
-
-📝 Edit your frontend `App.jsx` in `packages/react-app/src`
-
-💼 Edit your deployment scripts in `packages/hardhat/deploy`
-
-📱 Open http://localhost:3000 to see the app
-
-# 📚 Documentation
-
-Documentation, tutorials, challenges, and many more resources, visit: [docs.scaffoldeth.io](https://docs.scaffoldeth.io)
-
-# 🔭 Learning Solidity
-
-📕 Read the docs: https://docs.soliditylang.org
-
-📚 Go through each topic from [solidity by example](https://solidity-by-example.org) editing `YourContract.sol` in **🏗 scaffold-eth**
-
-- [Primitive Data Types](https://solidity-by-example.org/primitives/)
-- [Mappings](https://solidity-by-example.org/mapping/)
-- [Structs](https://solidity-by-example.org/structs/)
-- [Modifiers](https://solidity-by-example.org/function-modifier/)
-- [Events](https://solidity-by-example.org/events/)
-- [Inheritance](https://solidity-by-example.org/inheritance/)
-- [Payable](https://solidity-by-example.org/payable/)
-- [Fallback](https://solidity-by-example.org/fallback/)
-
-📧 Learn the [Solidity globals and units](https://solidity.readthedocs.io/en/v0.6.6/units-and-global-variables.html)
-
-# 🛠 Buidl
-
-Check out all the [active branches](https://github.com/austintgriffith/scaffold-eth/branches/active), [open issues](https://github.com/austintgriffith/scaffold-eth/issues), and join/fund the 🏰 [BuidlGuidl](https://BuidlGuidl.com)!
-
-
-# 💬 Support Chat
-
-Join the telegram [support chat 💬](https://t.me/joinchat/KByvmRe5wkR-8F_zz6AjpA) to ask questions and find others building with 🏗 scaffold-eth!
-
----
-
-🎛 Any web3 dev environment is complex, that's why 🏗 Scaffold-ETH comes with everything you need, already working together:
-
-- Hardhat for your local blockchain, deploying, and testing smart contracts.
-- React for building a frontend, using many useful pre-made components and hooks.
-- Ant for your UI. (You can easily changed to another library you prefer)
-- Surge / S3 / IPFS for publishing your app.
-- Tenderly / The Graph / Etherscan / Infura / Blocknative for infrastructure.
-- Support for L2 / Sidechains like Optimism and Arbitrum.
-
----
-
-🙏 Please check out our [Gitcoin grant](https://gitcoin.co/grants/2851/scaffold-eth) too!
+# Contributors
+Dmitry Bespalov, GitHub: @DmitryBesplaov, Twitter: @_DmitryBespalov
