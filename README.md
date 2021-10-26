@@ -103,3 +103,4 @@ See the LICENSE file.
 # Contributors
 - [Dmitry Bespalov](https://github.com/DmitryBespalov), [Twitter](https://twitter.com/@_DmitryBespalov)
 - Thanks to [Austin Griffith](https://github.com/austintgriffith) and others for building [scaffold-eth](https://github.com/scaffold-eth/scaffold-eth) that I used as a template do this experiment in.
+- Thanks to [Peter Norvig](https://norvig.com) for [Lispy](https://norvig.com/lispy.html)
