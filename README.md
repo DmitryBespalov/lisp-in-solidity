@@ -101,4 +101,6 @@ The output from the evaluation is a Solidity struct representing a terminal expr
 See the LICENSE file.
 
 # Contributors
-Dmitry Bespalov, GitHub: @DmitryBesplaov, Twitter: @_DmitryBespalov
+
+- Thanks to [Austin Griffith](https://github.com/austintgriffith) and others for building [scaffold-eth](https://github.com/scaffold-eth/scaffold-eth) that I used as a template do this experiment in.
+- [Dmitry Bespalov](https://github.com/DmitryBespalov), [Twitter](https://twitter.com/@_DmitryBespalov)
